@@ -1,55 +1,60 @@
-#load necessary libraries
 library(shiny)
 library(tidyverse)
-library(ggalluvial)
-library(ggthemes)
-#reading in the data into the session
-completedata <- read_csv(file = file.path("data/LDAmodel.csv"))
-#ui as fluidpage
+library(networkD3)
+library(igraph)
+library(shinyjs)
+library(RColorBrewer)
+library(tidygraph)
+
+cordocument <- read_csv(file = file.path("data/doccor.csv"))
+
 ui <- fluidPage(includeCSS("webpage.css"),
-                tags$h1(tags$a(href="https://dhmarx.commons.gc.cuny.edu/instructions/", "Interrogating Marx(ism)")),
-                              tags$h2("Alluvial Graph"),
-                sidebarPanel(tags$p("The Topic Flow app produces a visual comparison of words appearing within two selected corpus texts,
-                                    based on their classifications within topic groups identified using", 
-                                    tags$a(href = "https://en.wikipedia.org/wiki/Latent_Dirichlet_allocation", "Latent Dirichlet Allocation"),"."),
-                             tags$br(),
-                             #Input for the aluvial diagrams
-                  selectInput("var",
-                                label = "First Document:",
-                              choices = completedata$document,
-                                               selected = NULL),
-                                   textOutput("selected_var1"),
-                                   selectInput("vars",
-                                               label = "Second document:",
-                                               choices = completedata$document,
-                                               selected = NULL),
-                                   textOutput("selected_var2"),
-                  actionButton("button", label = "Compare"),
-                              br(),
-                              tags$a(href = "https://dhmarx.commons.gc.cuny.edu/instructions/topic-flow-instructions/", "Topic Flow Instructions"),
-                  tags$br(),
-                  tags$a(href="https://dhmarx.commons.gc.cuny.edu/instructions/", "Back to main page")),
-                            mainPanel(plotOutput("plot1")))
-#server function
+                tabPanel("Interrogating Marx(ism)"),
+                tags$h1(tags$a(href="https://dhmarx.commons.gc.cuny.edu/instructions/", "Interrogating Marx(ism)")), 
+                        tags$h2("Correlation Network"),
+        sidebarPanel(tags$p("The Correlation Network displays a network graph indicating the term frequency correlations between texts in the corpus. 
+                            It allows manipulation of the level of correlation to examine connections between works.
+                            Note, if the slider is moved above 0.7, a network graph is not generated"),
+                     tags$br(),
+          sliderInput("networkfilter",
+                                         label = "Correlation level:",
+                                         min = 0, max = 1,
+                                         value = 0.5,
+                                         step = 0.05),
+                                        br(),
+                     tags$a(href = "https://dhmarx.commons.gc.cuny.edu/instructions/correlation-network-instructions/", "Correlation Network Instructions"),
+                     tags$br(),
+                     tags$a(href="https://dhmarx.commons.gc.cuny.edu/instructions/", "Back to main page")),
+                             mainPanel(conditionalPanel(condition = "input.networkfilter <= 0.68", 
+                               forceNetworkOutput("network1"))))
+
 server <- function(input,output){
-                              all1<- reactive({completedata})
-                              alls <- eventReactive(input$button,
-                                {all1() %>% filter(
-                                  str_detect(document,pattern = c(input$var, input$vars)))})
-                              output$plot1<- renderPlot({
-                                #geneating the aluvial plot with ggalluvial
-                                print(ggplot(alls(),aes(axis1 = alls()$document, axis2 = alls()$term))+
-                                        geom_alluvium(aes(fill = factor(alls()$topic)),show.legend = FALSE)+
-                                        geom_stratum(fill = "darkgrey") +
-                                        geom_text(stat = "stratum",label.strata = TRUE)+
-                                        theme_void()+
-                                        theme(strip.text = element_text(color = "white"),
-                                              legend.text = element_blank(),
-                                              axis.text = element_blank(),
-                                              plot.background = element_rect(colour = "black")))})}
+  networkdata <- reactive(
+    {igraph_to_networkD3(
+      as.igraph(
+        as_tbl_graph(
+          filter(cordocument,correlation > input$networkfilter))))})
+  MyNodes <- reactive(
+    {data.frame(c(networkdata()$nodes,group = seq(1)))})
+  output$network1 <- renderForceNetwork(
+    {forceNetwork(Links = networkdata()$links, Nodes = MyNodes(),
+                  Source = "source", Target = "target",
+                  Value = "value", NodeID = "name",
+                  Group = "group", opacity = 0.8,
+                  charge = -80,
+                  opacityNoHover = 0.5,
+                  linkDistance = 200,
+                  linkWidth = JS(" function(d) { return d.value/1; }"),
+                  zoom = T, 
+                  linkColour = "red",
+                  fontSize = 18,
+                  height = 1000,
+                  width = 1000,
+                  colourScale = JS("d3.scaleOrdinal(d3.schemeCategory20);"),
+                  bounded = TRUE
+    )})}
 
 
-#run the shinyapp
 shinyApp(ui = ui, server = server)
 
-  
+
